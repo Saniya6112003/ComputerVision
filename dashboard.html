@@ -1,0 +1,510 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SmartPark Monitor — YOLO Parking Detection</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap');
+
+  :root {
+    --bg:        #0a0c10;
+    --surface:   #111520;
+    --border:    #1e2535;
+    --accent:    #00e5a0;
+    --danger:    #ff4060;
+    --warn:      #ffaa00;
+    --text:      #d8dff0;
+    --muted:     #546080;
+    --card-glow: 0 0 24px rgba(0,229,160,0.08);
+  }
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Syne', sans-serif;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* ─── header ─────────────────────────── */
+  header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 20px 36px;
+    border-bottom: 1px solid var(--border);
+    background: rgba(10,12,16,0.95);
+    position: sticky; top: 0; z-index: 100;
+    backdrop-filter: blur(12px);
+  }
+  .logo { display: flex; align-items: center; gap: 14px; }
+  .logo-icon {
+    width: 40px; height: 40px;
+    background: var(--accent);
+    border-radius: 10px;
+    display: grid; place-items: center;
+    font-size: 20px;
+  }
+  .logo h1 { font-size: 1.3rem; font-weight: 800; letter-spacing: -0.5px; }
+  .logo span { color: var(--accent); }
+  .badge {
+    background: rgba(0,229,160,0.12);
+    color: var(--accent);
+    border: 1px solid rgba(0,229,160,0.25);
+    padding: 4px 12px; border-radius: 20px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.72rem;
+    display: flex; align-items: center; gap: 6px;
+  }
+  .live-dot {
+    width: 7px; height: 7px;
+    background: var(--accent);
+    border-radius: 50%;
+    animation: blink 1.2s infinite;
+  }
+  @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0.2} }
+
+  /* ─── main layout ─────────────────────── */
+  main {
+    flex: 1;
+    padding: 32px 36px;
+    max-width: 1300px;
+    margin: 0 auto;
+    width: 100%;
+  }
+
+  /* ─── stat cards ──────────────────────── */
+  .stats-row {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 16px;
+    margin-bottom: 32px;
+  }
+  .stat-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 24px 22px;
+    position: relative;
+    overflow: hidden;
+    transition: border-color 0.25s;
+  }
+  .stat-card::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 3px;
+    background: var(--card-accent, var(--accent));
+    border-radius: 14px 14px 0 0;
+  }
+  .stat-card:hover { border-color: rgba(0,229,160,0.3); }
+  .stat-label {
+    font-size: 0.72rem;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-bottom: 10px;
+    font-family: 'JetBrains Mono', monospace;
+  }
+  .stat-value {
+    font-size: 2.6rem;
+    font-weight: 800;
+    letter-spacing: -2px;
+    line-height: 1;
+  }
+  .stat-sub {
+    font-size: 0.72rem;
+    color: var(--muted);
+    margin-top: 6px;
+  }
+
+  .card-total  { --card-accent: #546080; }
+  .card-occ    { --card-accent: var(--danger); }
+  .card-free   { --card-accent: var(--accent); }
+  .card-pct    { --card-accent: var(--warn); }
+
+  /* ─── grid + chart row ────────────────── */
+  .content-row {
+    display: grid;
+    grid-template-columns: 1fr 380px;
+    gap: 20px;
+    margin-bottom: 24px;
+  }
+
+  /* parking grid */
+  .panel {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 24px;
+  }
+  .panel-title {
+    font-size: 0.78rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--muted);
+    font-family: 'JetBrains Mono', monospace;
+    margin-bottom: 18px;
+    display: flex; align-items: center; gap: 10px;
+  }
+  .panel-title::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: var(--border);
+  }
+
+  #spot-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(70px, 1fr));
+    gap: 10px;
+  }
+  .spot {
+    aspect-ratio: 1.6;
+    border-radius: 8px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.65rem;
+    font-weight: 500;
+    cursor: default;
+    transition: transform 0.2s, box-shadow 0.2s;
+    border: 1px solid transparent;
+    position: relative;
+    overflow: hidden;
+  }
+  .spot:hover { transform: scale(1.05); }
+  .spot.free {
+    background: rgba(0,229,160,0.1);
+    border-color: rgba(0,229,160,0.25);
+    color: var(--accent);
+  }
+  .spot.occupied {
+    background: rgba(255,64,96,0.12);
+    border-color: rgba(255,64,96,0.3);
+    color: var(--danger);
+  }
+  .spot-id { font-size: 0.95rem; font-weight: 700; margin-bottom: 2px; }
+  .spot-tag { opacity: 0.7; font-size: 0.58rem; }
+
+  /* donut chart */
+  .chart-wrap { display: flex; flex-direction: column; gap: 16px; }
+  #donut-svg { width: 100%; height: auto; }
+  .legend { display: flex; flex-direction: column; gap: 10px; margin-top: 4px; }
+  .leg-item { display: flex; align-items: center; gap: 10px; font-size: 0.82rem; }
+  .leg-dot { width: 12px; height: 12px; border-radius: 50%; flex-shrink: 0; }
+  .leg-val { margin-left: auto; font-family: 'JetBrains Mono', monospace; font-weight: 600; }
+
+  /* ─── log table ───────────────────────── */
+  .log-table { width: 100%; border-collapse: collapse; font-size: 0.8rem; }
+  .log-table th {
+    text-align: left;
+    padding: 8px 12px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.68rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--muted);
+    border-bottom: 1px solid var(--border);
+  }
+  .log-table td {
+    padding: 10px 12px;
+    border-bottom: 1px solid rgba(30,37,53,0.6);
+    color: var(--text);
+  }
+  .log-table tr:last-child td { border-bottom: none; }
+  .tag {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.7rem;
+    font-weight: 600;
+  }
+  .tag.occ { background: rgba(255,64,96,0.15); color: var(--danger); }
+  .tag.free { background: rgba(0,229,160,0.12); color: var(--accent); }
+
+  /* ─── toolbar ─────────────────────────── */
+  .toolbar {
+    display: flex; gap: 12px; margin-bottom: 20px; align-items: center;
+  }
+  .toolbar label {
+    font-size: 0.78rem; color: var(--muted);
+    font-family: 'JetBrains Mono', monospace;
+  }
+  .btn {
+    background: rgba(0,229,160,0.12);
+    color: var(--accent);
+    border: 1px solid rgba(0,229,160,0.25);
+    padding: 7px 16px; border-radius: 8px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.75rem; cursor: pointer;
+    transition: background 0.2s;
+  }
+  .btn:hover { background: rgba(0,229,160,0.22); }
+  .btn.danger {
+    background: rgba(255,64,96,0.1);
+    color: var(--danger);
+    border-color: rgba(255,64,96,0.25);
+  }
+  .btn.danger:hover { background: rgba(255,64,96,0.2); }
+
+  input[type=range] {
+    accent-color: var(--accent);
+    width: 120px;
+  }
+
+  /* ─── footer ──────────────────────────── */
+  footer {
+    text-align: center;
+    padding: 16px;
+    font-size: 0.7rem;
+    color: var(--muted);
+    border-top: 1px solid var(--border);
+    font-family: 'JetBrains Mono', monospace;
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">
+    <div class="logo-icon">🅿</div>
+    <h1>Smart<span>Park</span> Monitor</h1>
+  </div>
+  <div style="display:flex;gap:12px;align-items:center;">
+    <div class="badge"><span class="live-dot"></span> YOLO LIVE</div>
+    <div class="badge" id="clock">--:--:--</div>
+  </div>
+</header>
+
+<main>
+
+  <!-- stat cards -->
+  <div class="stats-row">
+    <div class="stat-card card-total">
+      <div class="stat-label">Total Spots</div>
+      <div class="stat-value" id="s-total">20</div>
+      <div class="stat-sub">parking ROIs defined</div>
+    </div>
+    <div class="stat-card card-occ">
+      <div class="stat-label">Occupied</div>
+      <div class="stat-value" id="s-occ" style="color:var(--danger)">—</div>
+      <div class="stat-sub">vehicles detected</div>
+    </div>
+    <div class="stat-card card-free">
+      <div class="stat-label">Available</div>
+      <div class="stat-value" id="s-free" style="color:var(--accent)">—</div>
+      <div class="stat-sub">free right now</div>
+    </div>
+    <div class="stat-card card-pct">
+      <div class="stat-label">Utilisation</div>
+      <div class="stat-value" id="s-pct" style="color:var(--warn)">—</div>
+      <div class="stat-sub">occupancy rate</div>
+    </div>
+  </div>
+
+  <!-- toolbar -->
+  <div class="toolbar">
+    <button class="btn" onclick="randomise()">⟳  Simulate Frame</button>
+    <button class="btn danger" onclick="resetAll()">✕  Reset</button>
+    <label>Spots: <strong id="cnt-label">20</strong></label>
+    <input type="range" min="4" max="40" value="20" oninput="resizeGrid(this.value)">
+    <label style="margin-left:auto;">IoU threshold:
+      <strong id="thr-label">0.40</strong>
+    </label>
+    <input type="range" min="20" max="70" value="40" oninput="updateThreshold(this.value)">
+  </div>
+
+  <!-- main content -->
+  <div class="content-row">
+
+    <!-- parking grid -->
+    <div class="panel">
+      <div class="panel-title">Parking Spots</div>
+      <div id="spot-grid"></div>
+    </div>
+
+    <!-- donut + legend -->
+    <div class="panel chart-wrap">
+      <div class="panel-title">Occupancy Split</div>
+      <svg id="donut-svg" viewBox="0 0 200 180">
+        <circle cx="100" cy="90" r="70" fill="none" stroke="#1e2535" stroke-width="22"/>
+        <circle id="d-occ" cx="100" cy="90" r="70" fill="none"
+                stroke="#ff4060" stroke-width="22"
+                stroke-dasharray="0 440" stroke-linecap="round"
+                transform="rotate(-90 100 90)" style="transition:stroke-dasharray 0.6s ease"/>
+        <circle id="d-free" cx="100" cy="90" r="70" fill="none"
+                stroke="#00e5a0" stroke-width="22"
+                stroke-dasharray="0 440" stroke-linecap="round"
+                transform="rotate(-90 100 90)" style="transition:stroke-dasharray 0.6s ease"/>
+        <text x="100" y="84" text-anchor="middle" fill="#d8dff0"
+              font-family="Syne,sans-serif" font-size="22" font-weight="800" id="d-pct-text">—</text>
+        <text x="100" y="102" text-anchor="middle" fill="#546080"
+              font-family="JetBrains Mono,monospace" font-size="9">OCCUPIED</text>
+      </svg>
+      <div class="legend">
+        <div class="leg-item">
+          <div class="leg-dot" style="background:var(--danger)"></div>
+          <span>Occupied</span>
+          <span class="leg-val" id="leg-occ">—</span>
+        </div>
+        <div class="leg-item">
+          <div class="leg-dot" style="background:var(--accent)"></div>
+          <span>Available</span>
+          <span class="leg-val" id="leg-free">—</span>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- log table -->
+  <div class="panel">
+    <div class="panel-title">Detection Log</div>
+    <table class="log-table">
+      <thead>
+        <tr>
+          <th>Frame</th><th>Time</th><th>Total</th>
+          <th>Occupied</th><th>Free</th><th>Utilisation</th><th>Status</th>
+        </tr>
+      </thead>
+      <tbody id="log-body"></tbody>
+    </table>
+  </div>
+
+</main>
+
+<footer>
+  SRM Institute of Science and Technology · DSBS Department · YOLO Parking Detection · Phase I
+</footer>
+
+<script>
+// ─────────────────────────────────────────────
+// STATE
+// ─────────────────────────────────────────────
+let TOTAL     = 20;
+let threshold = 0.40;
+let frameId   = 0;
+let spots     = [];          // true=occupied false=free
+
+// ─────────────────────────────────────────────
+// INIT
+// ─────────────────────────────────────────────
+function init() {
+  spots = Array.from({length: TOTAL}, () => Math.random() < 0.45);
+  render();
+}
+
+// ─────────────────────────────────────────────
+// RENDER
+// ─────────────────────────────────────────────
+function render() {
+  const occ  = spots.filter(Boolean).length;
+  const free = TOTAL - occ;
+  const pct  = TOTAL ? Math.round(occ / TOTAL * 100) : 0;
+
+  // stats
+  document.getElementById('s-total').textContent = TOTAL;
+  document.getElementById('s-occ').textContent   = occ;
+  document.getElementById('s-free').textContent  = free;
+  document.getElementById('s-pct').textContent   = pct + '%';
+
+  // spot grid
+  const grid = document.getElementById('spot-grid');
+  grid.innerHTML = '';
+  spots.forEach((occ, i) => {
+    const d = document.createElement('div');
+    d.className = 'spot ' + (occ ? 'occupied' : 'free');
+    d.innerHTML = `<div class="spot-id">S${i+1}</div>
+                   <div class="spot-tag">${occ ? '🔴 OCC' : '🟢 FREE'}</div>`;
+    d.onclick = () => { spots[i] = !spots[i]; render(); };
+    grid.appendChild(d);
+  });
+
+  // donut
+  const circ = 2 * Math.PI * 70;   // ≈ 440
+  const occArc  = (occ  / TOTAL) * circ;
+  const freeArc = (free / TOTAL) * circ;
+
+  const dOcc  = document.getElementById('d-occ');
+  const dFree = document.getElementById('d-free');
+  dOcc.setAttribute('stroke-dasharray',  `${occArc} ${circ - occArc}`);
+  // offset the free segment to start after occ segment
+  dFree.setAttribute('stroke-dasharray', `${freeArc} ${circ - freeArc}`);
+  dFree.setAttribute('transform', `rotate(${(occArc/circ)*360 - 90} 100 90)`);
+
+  document.getElementById('d-pct-text').textContent = pct + '%';
+  document.getElementById('leg-occ').textContent    = occ;
+  document.getElementById('leg-free').textContent   = free;
+
+  // log row
+  frameId++;
+  const now   = new Date().toLocaleTimeString();
+  const tbody = document.getElementById('log-body');
+  const tr    = document.createElement('tr');
+  const status = pct >= 90 ? 'FULL' : pct >= 60 ? 'BUSY' : 'CLEAR';
+  const cls    = pct >= 60 ? 'occ' : 'free';
+  tr.innerHTML = `<td>#${frameId}</td><td>${now}</td><td>${TOTAL}</td>
+    <td style="color:var(--danger)">${occ}</td>
+    <td style="color:var(--accent)">${free}</td>
+    <td>${pct}%</td>
+    <td><span class="tag ${cls}">${status}</span></td>`;
+  tbody.prepend(tr);
+  // keep max 20 rows
+  while (tbody.rows.length > 20) tbody.deleteRow(-1);
+}
+
+// ─────────────────────────────────────────────
+// CONTROLS
+// ─────────────────────────────────────────────
+function randomise() {
+  spots = Array.from({length: TOTAL}, () => Math.random() < threshold + 0.1);
+  render();
+}
+
+function resetAll() {
+  spots = Array.from({length: TOTAL}, () => false);
+  frameId = 0;
+  document.getElementById('log-body').innerHTML = '';
+  render();
+}
+
+function resizeGrid(n) {
+  TOTAL = +n;
+  document.getElementById('cnt-label').textContent = n;
+  spots = Array.from({length: TOTAL}, () => Math.random() < 0.45);
+  render();
+}
+
+function updateThreshold(v) {
+  threshold = v / 100;
+  document.getElementById('thr-label').textContent = threshold.toFixed(2);
+}
+
+// clock
+setInterval(() => {
+  document.getElementById('clock').textContent = new Date().toLocaleTimeString();
+}, 1000);
+
+// auto simulate every 3 s
+setInterval(() => {
+  // randomly flip a few spots (simulate movement)
+  const k = Math.floor(Math.random() * 3) + 1;
+  for (let i = 0; i < k; i++) {
+    const idx = Math.floor(Math.random() * TOTAL);
+    spots[idx] = !spots[idx];
+  }
+  render();
+}, 3000);
+
+init();
+</script>
+</body>
+</html>
